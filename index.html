@@ -5,75 +5,68 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DataInsight v4.48 PRO - 客服日報管理系統</title>
     
-    <!-- 1. 引入基礎庫 (CDN) -->
+    <!-- 引入基礎庫 (CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     
-    <!-- React & Babel -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- 圖表 Recharts 依賴 -->
     <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
     <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
-    
-    <!-- 圖示 Lucide -->
     <script src="https://unpkg.com/lucide@latest"></script>
-
-    <!-- Firebase SDK (UMD) -->
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
     <style>
         body { font-family: 'Inter', 'Noto Sans TC', sans-serif; background-color: #f8fafc; }
         .animate-fade-in { animation: fadeIn 0.3s ease-out both; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .expand-content { transition: max-height 0.5s ease, opacity 0.3s ease; overflow: hidden; }
-        select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1.5em; }
+        #loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 9999;
+        }
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid #f3f3f3;
+            border-top: 4px solid #4f46e5; border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <p style="margin-top: 15px; font-weight: 800; color: #64748b; font-size: 14px;">系統數據載入中...</p>
+    </div>
+
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useMemo, useEffect } = React;
-        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area } = Recharts;
+        const { 
+            BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
+            ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area 
+        } = Recharts;
 
-        // --- Firebase 配置 (此處由環境變數傳入或手動填寫) ---
-        // 為了讓 GitHub Pages 正常運行，我們需要從環境變數或手動獲取配置
-        const firebaseConfig = window.__firebase_config ? JSON.parse(window.__firebase_config) : {
-            apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: ""
-        };
-        const appId = window.__app_id || 'daily-report-v4-48';
-
-        if (firebaseConfig.projectId) {
-            firebase.initializeApp(firebaseConfig);
-        }
-        const auth = firebase.auth();
-        const db = firebase.firestore();
-
-        // --- 常量定義 ---
-        const COLORS = ['#4f46e5', '#0ea5e9', '#f59e0b', '#ec4899', '#8b5cf6', '#10b981', '#f43f5e', '#64748b', '#06b6d4', '#6366f1'];
-        const ISSUE_TYPES = ["帳號問題", "伺服器相關問題", "儲值相關問題", "安裝、下載", "系統相關問題", "活動領獎問題", "規則設定問題", "反應與建議", "客戶服務", "行動版問題"];
-
+        // --- 核心遊戲排序定義 ---
         const ONLINE_ORDER = ['明星3缺1', '滿貫大亨', '捕魚大玩咖', '唯舞獨尊', '競技麻將2', '儲值專線', 'Vegas Frenzy', '大滿貫', '玩星派對', '幸運拉霸GO'];
         const COMMERCIAL_ORDER = ['金猴爺', '金虎爺', '金好運娛樂城', '金好運娛樂城MY (TH,SG)', '金好運娛樂城JP', '海王寶藏', '撞球好手', '三國戰紀', 'Slotverse', '跑跑英雄'];
+        const ISSUE_TYPES = ["帳號問題", "伺服器相關問題", "儲值相關問題", "安裝、下載", "系統相關問題", "活動領獎問題", "規則設定問題", "反應與建議", "客戶服務", "行動版問題"];
+        const COLORS = ['#4f46e5', '#0ea5e9', '#f59e0b', '#ec4899', '#8b5cf6', '#10b981', '#f43f5e', '#64748b', '#06b6d4', '#6366f1'];
 
-        // --- Lucide Icon Shim (用於 HTML 環境) ---
+        // --- 工具組件 ---
         const Icon = ({ name, size = 24, className = "" }) => {
             useEffect(() => { lucide.createIcons(); }, [name]);
             return <i data-lucide={name} className={className} style={{ width: size, height: size }}></i>;
         };
 
-        // --- 子組件：指標卡片 ---
         const StatCard = ({ title, value, prevValue, iconName, gradient }) => {
-            const hasPrev = typeof prevValue === 'number';
-            const diff = hasPrev ? (value - prevValue) : null;
-            const percent = (hasPrev && prevValue !== 0) ? ((diff / prevValue) * 100).toFixed(1) : null;
+            const diff = value - prevValue;
+            const percent = prevValue !== 0 ? ((diff / prevValue) * 100).toFixed(1) : 0;
             return (
-                <div className="relative p-6 rounded-[2rem] bg-white border border-slate-100 shadow-sm overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+                <div className="relative p-6 rounded-[2rem] bg-white border border-slate-100 shadow-sm overflow-hidden hover:-translate-y-1 transition-all duration-300">
                     <div className="flex items-center justify-between mb-4">
                         <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">{title}</p>
                         <div className={`p-2.5 rounded-xl ${gradient} text-white shadow-lg flex items-center justify-center`}>
@@ -81,118 +74,89 @@
                         </div>
                     </div>
                     <div className="flex items-end gap-2">
-                        <h3 className="text-3xl font-black text-slate-800 tracking-tighter tabular-nums">{Number(value || 0).toLocaleString()}</h3>
-                        {percent !== null && (
-                            <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-lg mb-1 ${diff > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                                {diff > 0 ? "▲" : "▼"} {Math.abs(Number(percent))}%
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        };
-
-        // --- 子組件：重大異常 ---
-        const IncidentItem = ({ incident }) => {
-            const [isExpanded, setIsExpanded] = useState(false);
-            const isCritical = incident.severity === 'critical';
-            return (
-                <div className={`mb-3 rounded-2xl transition-all duration-300 ring-1 ${isExpanded ? 'bg-white shadow-xl ring-slate-200 py-2' : 'bg-slate-50 ring-slate-100 hover:ring-slate-200'}`}>
-                    <div className="px-5 py-4 flex justify-between items-center cursor-pointer select-none" onClick={() => setIsExpanded(!isExpanded)}>
-                        <div className="flex items-center gap-4">
-                            <div className={`flex items-center justify-center w-10 h-10 rounded-xl ${isCritical ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'}`}>
-                                <Icon name="alert-triangle" size={20} className={isCritical ? 'animate-pulse' : ''} />
-                            </div>
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <span className="font-black text-slate-800 tracking-tight text-sm">{incident.summary}</span>
-                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${isCritical ? 'bg-rose-500 text-white' : 'bg-slate-200 text-slate-600'}`}>
-                                        {isCritical ? 'Critical' : 'Warning'}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                        <Icon name={isExpanded ? "chevron-up" : "chevron-down"} size={18} className="text-slate-300" />
-                    </div>
-                    <div className={`expand-content ${isExpanded ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                        <div className="px-5 pb-5 pt-2 ml-14">
-                            <div className="text-xs text-slate-600 leading-relaxed bg-white border border-slate-100 p-4 rounded-2xl shadow-inner">
-                                <p className="text-slate-400 font-black text-[9px] uppercase tracking-widest mb-1">描述明細</p>
-                                {incident.description}
-                            </div>
+                        <h3 className="text-3xl font-black text-slate-800 tracking-tighter">{value.toLocaleString()}</h3>
+                        <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-lg mb-1 ${diff >= 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                            {diff >= 0 ? "▲" : "▼"} {Math.abs(percent)}%
                         </div>
                     </div>
                 </div>
             );
         };
 
-        // --- 子組件：專案分析行 ---
-        const ProjectAnalysisRow = ({ project, timeScale, weeklyRange, trendData }) => {
+        const IncidentItem = ({ summary, description, severity }) => {
             const [isExpanded, setIsExpanded] = useState(false);
-            const totalInView = useMemo(() => trendData.reduce((s, a) => s + (a.count || 0), 0), [trendData]);
-            const pieData = useMemo(() => ISSUE_TYPES.map(type => ({
-                name: type,
-                value: trendData.reduce((sum, d) => sum + (d.issueBreakdown?.[type] || 0), 0)
-            })).filter(d => d.value > 0), [trendData]);
-
             return (
-                <div className={`rounded-[2.5rem] transition-all duration-500 border border-transparent ${isExpanded ? 'bg-slate-50 border-indigo-100 shadow-xl py-2' : 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-lg'}`}>
-                    <div className="px-8 py-7 flex items-center justify-between cursor-pointer select-none" onClick={() => setIsExpanded(!isExpanded)}>
+                <div className="mb-3 rounded-2xl bg-slate-50 ring-1 ring-slate-100 overflow-hidden transition-all hover:bg-white hover:shadow-lg">
+                    <div className="px-5 py-4 flex justify-between items-center cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
+                        <div className="flex items-center gap-3">
+                            <div className={`w-2 h-2 rounded-full ${severity === 'critical' ? 'bg-rose-500 animate-pulse' : 'bg-amber-500'}`}></div>
+                            <span className="font-bold text-slate-800 text-sm">{summary}</span>
+                        </div>
+                        <Icon name={isExpanded ? "chevron-up" : "chevron-down"} size={16} className="text-slate-400" />
+                    </div>
+                    {isExpanded && (
+                        <div className="px-5 pb-4 text-xs text-slate-500 leading-relaxed border-t border-slate-100 pt-3 bg-white">
+                            {description}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // --- 專案分析列 ---
+        const ProjectAnalysisRow = ({ name, timeScale, trendData }) => {
+            const [isExpanded, setIsExpanded] = useState(false);
+            const total = trendData.reduce((s, a) => s + a.count, 0);
+            
+            return (
+                <div className={`rounded-[2.5rem] transition-all duration-500 border border-transparent ${isExpanded ? 'bg-slate-50 border-indigo-100 shadow-xl' : 'bg-white border-slate-100 hover:border-indigo-200'}`}>
+                    <div className="px-8 py-7 flex items-center justify-between cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
                         <div className="flex items-center gap-6 w-80 shrink-0">
                             <div className={`p-3.5 rounded-2xl transition-all shadow-md ${isExpanded ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-400'}`}>
-                                <Icon name="chevron-right" size={24} className={`transition-transform duration-500 ${isExpanded ? 'rotate-90' : ''}`} />
+                                <Icon name="chevron-right" size={24} className={isExpanded ? "rotate-90" : ""} />
                             </div>
-                            <span className="font-black text-slate-800 text-2xl tracking-tight">{project.name}</span>
+                            <span className="font-black text-slate-800 text-2xl tracking-tight">{name}</span>
                         </div>
-                        <div className="flex-grow h-16 max-w-2xl mx-10 relative">
+                        <div className="flex-grow h-16 max-w-2xl mx-10">
                             <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={trendData}>
-                                    <defs>
-                                        <linearGradient id={`grad-${project.id}`} x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.2}/>
-                                            <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
-                                        </linearGradient>
-                                    </defs>
-                                    <Area type="monotone" dataKey="count" stroke="#4f46e5" fill={`url(#grad-${project.id})`} strokeWidth={4} dot={false} isAnimationActive={false} />
+                                    <Area type="monotone" dataKey="count" stroke="#4f46e5" fill="#e0e7ff" strokeWidth={4} dot={false} />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
-                        <div className="text-right w-64 shrink-0 border-l border-slate-100 pl-8">
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{timeScale === 'weekly' ? '週' : '日'}總計</p>
-                           <p className={`text-4xl font-black tabular-nums leading-none ${isExpanded ? 'text-indigo-600' : 'text-slate-800'}`}>{totalInView.toLocaleString()}</p>
+                        <div className="text-right w-64 border-l pl-8">
+                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{timeScale === 'weekly' ? '週期' : '日'}總計</p>
+                           <p className={`text-4xl font-black ${isExpanded ? 'text-indigo-600' : 'text-slate-800'}`}>{total.toLocaleString()}</p>
                         </div>
                     </div>
                     {isExpanded && (
-                        <div className="px-10 pb-10 pt-0 animate-fade-in">
-                            <div className="grid grid-cols-1 xl:grid-cols-12 gap-10 border-t border-slate-200 pt-10 mt-2">
-                                <div className="xl:col-span-5 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm h-[420px]">
-                                    <h4 className="text-sm font-black text-slate-900 mb-8 flex items-center gap-3"><Icon name="activity" size={20} className="text-indigo-600" /> 分佈分析</h4>
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <PieChart>
-                                            <Pie data={pieData} innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value">
-                                                {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                                            </Pie>
-                                            <Tooltip />
-                                        </PieChart>
-                                    </ResponsiveContainer>
+                        <div className="px-10 pb-10 animate-fade-in">
+                            <div className="grid grid-cols-1 xl:grid-cols-12 gap-10 border-t pt-10 mt-2">
+                                <div className="xl:col-span-5 bg-white p-8 rounded-[2.5rem] border shadow-sm">
+                                    <h4 className="text-sm font-black mb-8 flex items-center gap-3"><Icon name="activity" size={20} className="text-indigo-600" /> 問題類型分佈</h4>
+                                    <div className="h-[300px]">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie data={ISSUE_TYPES.map((t,i)=>({name:t, value: 5+Math.floor(Math.random()*20)}))} innerRadius={60} outerRadius={90} dataKey="value">
+                                                    {ISSUE_TYPES.map((e,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+                                                </Pie>
+                                                <Tooltip />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    </div>
                                 </div>
-                                <div className="xl:col-span-7 overflow-hidden">
-                                    <h4 className="text-sm font-black text-slate-900 mb-6 flex items-center gap-3"><Icon name="database" size={22} className="text-indigo-600" /> 明細數據</h4>
-                                    <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-md overflow-x-auto">
+                                <div className="xl:col-span-7">
+                                    <h4 className="text-sm font-black mb-6 flex items-center gap-3"><Icon name="database" size={22} className="text-indigo-600" /> 明細數據矩陣</h4>
+                                    <div className="bg-white rounded-[2.5rem] border shadow-md overflow-x-auto text-xs">
                                         <table className="w-full text-left border-collapse">
-                                            <thead><tr className="text-slate-400 font-black uppercase tracking-widest border-b border-slate-50"><th className="pl-8 py-6 text-[10px]">問題類型</th>{trendData.map(d => <th key={d.name} className="text-center text-[10px]">{d.name}</th>)}<th className="text-right pr-8 text-[10px]">合計</th></tr></thead>
+                                            <thead><tr className="bg-slate-50 text-slate-400 font-black uppercase border-b"><th className="pl-6 py-4">問題類型</th>{trendData.map(d=><th key={d.name} className="text-center">{d.name}</th>)}</tr></thead>
                                             <tbody>
-                                                {ISSUE_TYPES.map((type) => {
-                                                    const rowTotal = trendData.reduce((sum, d) => sum + (d.issueBreakdown?.[type] || 0), 0);
-                                                    if (rowTotal === 0) return null;
-                                                    return (
-                                                        <tr key={type} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                                                            <td className="font-black text-slate-600 pl-8 py-5 text-xs">{type}</td>
-                                                            {trendData.map(d => <td key={d.name} className={`text-center font-bold text-xs ${d.issueBreakdown?.[type] === 0 ? 'text-slate-200' : 'text-slate-500'}`}>{d.issueBreakdown?.[type] || 0}</td>)}
-                                                            <td className="text-right font-black text-slate-400 pr-8 text-xs">{rowTotal}</td>
-                                                        </tr>
-                                                    );
-                                                })}
+                                                {ISSUE_TYPES.slice(0,6).map(type=>(
+                                                    <tr key={type} className="border-b hover:bg-slate-50 transition-colors">
+                                                        <td className="font-bold text-slate-600 pl-6 py-4">{type}</td>
+                                                        {trendData.map(d=><td key={d.name} className="text-center font-medium text-slate-500">{Math.floor(Math.random()*15)}</td>)}
+                                                    </tr>
+                                                ))}
                                             </tbody>
                                         </table>
                                     </div>
@@ -204,146 +168,124 @@
             );
         };
 
-        // --- 主應用組件 ---
+        // --- 主應用 ---
         function App() {
-            const [user, setUser] = useState(null);
-            const [projects, setProjects] = useState([]);
             const [activeTab, setActiveTab] = useState('general');
-            const [selectedDate, setSelectedDate] = useState('');
-            const [database, setDatabase] = useState({});
             const [timeScale, setTimeScale] = useState('weekly');
-            const [weeklyRange, setWeeklyRange] = useState(8);
-
-            // 1. 初始化 (GitHub Demo 模擬模式)
+            
             useEffect(() => {
-                const mockProjects = [
-                    ...ONLINE_ORDER.map(name => ({ id: name, name, category: 'online' })),
-                    ...COMMERCIAL_ORDER.map(name => ({ id: name, name, category: 'commercial' }))
-                ];
-                setProjects(mockProjects);
-                setUser({ uid: "demo-user" });
-
-                // 生成 95 天模擬數據
-                const dbData = {};
-                const startDate = new Date('2025-10-10');
-                for (let i = 0; i < 95; i++) {
-                    const d = new Date(startDate);
-                    d.setDate(startDate.getDate() + i);
-                    const dateStr = d.toISOString().split('T')[0];
-                    const gameGen = (list) => list.map(p => {
-                        const issueBreakdown = {};
-                        ISSUE_TYPES.forEach(t => issueBreakdown[t] = Math.floor(Math.random() * 15));
-                        return { name: p.name, count: Object.values(issueBreakdown).reduce((a,b)=>a+b,0), issueBreakdown };
-                    });
-                    dbData[dateStr] = {
-                        general: { stats: { tickets: 450 + Math.floor(Math.random()*100), phoneCalls: 80, emails: 300, alertMails: 20, redmineReplies: 120 }, gameBreakdown: gameGen(mockProjects.filter(p=>p.category==='online')).sort((a,b)=>b.count-a.count), majorIncidents: i===94 ? [{id:1, severity:'critical', summary:'【明星3缺1】iOS 支付異常', description:'iOS玩家儲值後未入點。'}] : [] },
-                        commercial: { stats: { tickets: 250, phoneCalls: 40, emails: 150, alertMails: 10, redmineReplies: 60 }, gameBreakdown: gameGen(mockProjects.filter(p=>p.category==='commercial')).sort((a,b)=>b.count-a.count), majorIncidents: [] }
-                    };
-                }
-                setDatabase(dbData);
-                setSelectedDate(Object.keys(dbData).sort().reverse()[0]);
+                setTimeout(() => {
+                    const overlay = document.getElementById('loading-overlay');
+                    if (overlay) overlay.style.display = 'none';
+                }, 1000);
             }, []);
 
-            const datesList = useMemo(() => Object.keys(database).sort().reverse(), [database]);
-            const currentReport = database[selectedDate]?.[activeTab] || null;
-            const prevReport = useMemo(() => database[datesList[datesList.indexOf(selectedDate)+1]]?.[activeTab], [selectedDate, database, activeTab]);
+            const currentList = activeTab === 'general' ? ONLINE_ORDER : COMMERCIAL_ORDER;
+            
+            const chartData = useMemo(() => currentList.map(name => ({ 
+                name, 
+                count: 120 + Math.floor(Math.random() * 300) 
+            })).sort((a, b) => b.count - a.count), [activeTab]);
 
-            const weeklyBuckets = useMemo(() => {
-                const b = [];
-                for (let i = 0; i < weeklyRange; i++) {
-                    const wd = datesList.slice(i * 7, (i + 1) * 7);
-                    if (wd.length > 0) b.push({ label: `W${weeklyRange - i}`, dates: wd });
-                }
-                return b.reverse();
-            }, [datesList, weeklyRange]);
+            const getTrend = () => (timeScale === 'weekly' ? ["W8", "W7", "W6", "W5", "W4", "W3", "W2", "W1"] : ["02/07", "02/06", "02/05", "02/04", "02/03"]).map(name => ({
+                name, count: 40 + Math.floor(Math.random() * 100)
+            }));
 
-            const getProjectTrendData = (projectName) => {
-                if (timeScale === 'weekly') {
-                    return weeklyBuckets.map(bucket => {
-                        let total = 0;
-                        const brk = ISSUE_TYPES.reduce((a,t)=>({...a, [t]:0}), {});
-                        bucket.dates.forEach(d => {
-                            const g = database[d]?.[activeTab]?.gameBreakdown.find(x => x.name === projectName);
-                            if (g) { total += g.count; ISSUE_TYPES.forEach(t => brk[t] += (g.issueBreakdown?.[t] || 0)); }
-                        });
-                        return { name: bucket.label, count: total, issueBreakdown: brk };
-                    });
-                }
-                return datesList.slice(0, 5).reverse().map(d => {
-                    const g = database[d]?.[activeTab]?.gameBreakdown.find(x => x.name === projectName);
-                    return { name: d.slice(5), count: g?.count || 0, issueBreakdown: g?.issueBreakdown || {} };
-                });
+            const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name, value }) => {
+                const radius = innerRadius + (outerRadius - innerRadius) * 1.6;
+                const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
+                const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
+                return <text x={x} y={y} fill="#64748b" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="10" fontWeight="800">{`${name} ${value}件 (${(percent * 100).toFixed(0)}%)`}</text>;
             };
 
             return (
-                <div className="min-h-screen pb-24 antialiased">
-                    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-200/60 h-20 flex items-center shadow-sm">
+                <div className="min-h-screen pb-24 animate-fade-in">
+                    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b h-20 flex items-center shadow-sm">
                         <div className="max-w-screen-2xl mx-auto px-8 w-full flex justify-between items-center">
                             <div className="flex items-center gap-4">
                                 <div className="bg-slate-900 p-2.5 rounded-2xl shadow-lg rotate-2"><Icon name="shield-check" className="text-white" /></div>
-                                <div><h1 className="font-black text-2xl tracking-tighter text-slate-900 leading-none">DataInsight <span className="bg-indigo-600 text-white text-[9px] px-2 py-0.5 rounded uppercase">DEMO</span></h1><p className="text-[9px] text-slate-400 font-black tracking-widest uppercase mt-1">GitHub Presentation Mode</p></div>
+                                <div><h1 className="font-black text-2xl tracking-tighter text-slate-900 leading-none">DataInsight <span className="bg-indigo-600 text-white text-[9px] px-2 py-0.5 rounded uppercase">DEMO v4.48</span></h1><p className="text-[9px] text-slate-400 font-black tracking-widest uppercase mt-1">Presentation Hub</p></div>
                             </div>
-                            <div className="flex items-center gap-3 px-5 py-2.5 bg-slate-100 rounded-2xl border border-slate-200">
+                            <div className="flex items-center gap-3 px-5 py-2.5 bg-slate-100 rounded-2xl border">
                                 <Icon name="calendar" size={15} className="text-slate-400" />
-                                <select value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="bg-transparent text-xs font-black text-slate-700 outline-none">
-                                    {datesList.slice(0, 30).map(d => <option key={d} value={d}>{d}</option>)}
-                                </select>
+                                <span className="text-xs font-black text-slate-700">2026-02-07 (週六)</span>
                             </div>
                         </div>
                     </header>
 
                     <main className="max-w-screen-2xl mx-auto px-8 mt-10">
+                        {/* 頁籤控制 */}
                         <div className="flex gap-4 mb-12">
-                            <button onClick={() => setActiveTab('general')} className={`flex-1 py-5 rounded-[2.5rem] font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'general' ? 'bg-indigo-600 text-white shadow-xl scale-[1.01]' : 'bg-white text-slate-400'}`}>線上遊戲 Online</button>
-                            <button onClick={() => setActiveTab('commercial')} className={`flex-1 py-5 rounded-[2.5rem] font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'commercial' ? 'bg-indigo-600 text-white shadow-xl scale-[1.01]' : 'bg-white text-slate-400'}`}>商用遊戲 Tech</button>
+                            <button onClick={() => setActiveTab('general')} className={`flex-1 py-6 rounded-[2.5rem] font-black text-xs uppercase tracking-[0.2em] transition-all shadow-md ${activeTab==='general'?'bg-indigo-600 text-white scale-[1.02]':'bg-white text-slate-400 border hover:bg-slate-50'}`}>線上遊戲 Online</button>
+                            <button onClick={() => setActiveTab('commercial')} className={`flex-1 py-6 rounded-[2.5rem] font-black text-xs uppercase tracking-[0.2em] transition-all shadow-md ${activeTab==='commercial'?'bg-indigo-600 text-white scale-[1.02]':'bg-white text-slate-400 border hover:bg-slate-50'}`}>商用遊戲 Tech</button>
                         </div>
 
-                        {currentReport && (
-                            <div className="animate-fade-in">
-                                <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-12">
-                                    <StatCard title="問題回報" value={currentReport.stats.tickets} prevValue={prevReport?.stats?.tickets} iconName="file-text" gradient="bg-indigo-600" />
-                                    <StatCard title="電話進線" value={currentReport.stats.phoneCalls} prevValue={prevReport?.stats?.phoneCalls} iconName="phone" gradient="bg-emerald-600" />
-                                    <StatCard title="信箱回報" value={currentReport.stats.emails} prevValue={prevReport?.stats?.emails} iconName="mail" gradient="bg-purple-600" />
-                                    <StatCard title="警示信件" value={currentReport.stats.alertMails} prevValue={prevReport?.stats?.alertMails} iconName="activity" gradient="bg-rose-600" />
-                                    <StatCard title="Redmine回單" value={currentReport.stats.redmineReplies} prevValue={prevReport?.stats?.redmineReplies} iconName="clipboard-check" gradient="bg-amber-600" />
-                                </div>
+                        {/* KPI 指標 */}
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-12">
+                            <StatCard title="問題回報" value={854} prevValue={720} iconName="file-text" gradient="bg-indigo-600" />
+                            <StatCard title="電話進線" value={92} prevValue={105} iconName="phone" gradient="bg-emerald-600" />
+                            <StatCard title="信箱回報" value={345} prevValue={310} iconName="mail" gradient="bg-purple-600" />
+                            <StatCard title="警示信件" value={21} prevValue={15} iconName="activity" gradient="bg-rose-600" />
+                            <StatCard title="Redmine回單" value={188} prevValue={165} iconName="clipboard-check" gradient="bg-amber-600" />
+                        </div>
 
-                                <div className="grid grid-cols-1 xl:grid-cols-3 gap-10 mb-12">
-                                    <div className="xl:col-span-1 bg-white p-10 rounded-[3.5rem] border border-slate-200 shadow-xl min-h-[600px]">
-                                        <h3 className="flex items-center gap-4 font-black text-slate-900 text-3xl tracking-tighter mb-10"><Icon name="alert-triangle" className="text-rose-600" size={36}/> 本日重大異常</h3>
-                                        {currentReport.majorIncidents.length > 0 ? currentReport.majorIncidents.map(m => <IncidentItem key={m.id} incident={m} />) : <div className="text-center py-32 text-slate-300 font-black italic">營運穩定無異常</div>}
+                        {/* 核心內容區 */}
+                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-10 mb-12 items-start">
+                            <div className="xl:col-span-1 bg-white p-10 rounded-[3.5rem] border shadow-xl min-h-[600px]">
+                                <h3 className="flex items-center gap-4 font-black text-slate-900 text-3xl tracking-tighter mb-10"><Icon name="alert-triangle" className="text-rose-600" size={36}/> 本日重大異常</h3>
+                                <IncidentItem summary="明星3缺1 iOS 內購校驗異常" description="大量玩家反應點擊品項後卡在讀取畫面，查為金流端節點連線逾時。" severity="critical" />
+                                <IncidentItem summary="滿貫大亨資料庫定期維護延遲" description="例行維護因磁碟掃描耗時較長，開機時間延後 15 分鐘。" severity="warning" />
+                            </div>
+                            <div className="xl:col-span-2 bg-white p-10 rounded-[3.5rem] border shadow-xl min-h-[600px] overflow-hidden">
+                                <h3 className="font-black text-slate-900 text-3xl tracking-tighter flex items-center gap-3 mb-12"><Icon name="layers" className="text-indigo-600" size={28}/> {activeTab === 'general' ? '線上' : '商用'}遊戲問題量排行</h3>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                    <div className="h-[420px]">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 90 }}>
+                                                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                                                <XAxis type="number" hide />
+                                                <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 11, fontWeight: 900, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                                                <Bar dataKey="count" radius={[0, 10, 10, 0]} barSize={20} fill="#4f46e5" label={{ position: 'right', fill: '#1e293b', fontSize: 11, fontWeight: 900, offset: 12, formatter: v => `${v}件` }}>
+                                                    {chartData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                                </Bar>
+                                            </BarChart>
+                                        </ResponsiveContainer>
                                     </div>
-                                    <div className="xl:col-span-2 bg-white p-10 rounded-[3.5rem] border border-slate-200 shadow-xl min-h-[600px]">
-                                        <h3 className="font-black text-slate-900 text-3xl tracking-tighter flex items-center gap-3 mb-12"><Icon name="layers" className="text-indigo-600" size={28}/> 遊戲問題量排行</h3>
-                                        <div className="h-[400px]">
-                                            <ResponsiveContainer width="100%" height="100%">
-                                                <BarChart data={currentReport.gameBreakdown} layout="vertical" margin={{ left: 10, right: 85 }}>
-                                                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                                                    <XAxis type="number" hide />
-                                                    <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11, fontWeight: 900, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                                                    <Bar dataKey="count" radius={[0, 10, 10, 0]} barSize={20} fill="#4f46e5" label={{ position: 'right', fill: '#1e293b', fontSize: 11, fontWeight: 900, offset: 12, formatter: v => `${v}件` }}>
-                                                        {currentReport.gameBreakdown.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                                    </Bar>
-                                                </BarChart>
-                                            </ResponsiveContainer>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="bg-white p-10 rounded-[4rem] border border-slate-200 shadow-xl mb-20 overflow-hidden">
-                                    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-12 gap-8">
-                                        <div className="flex items-center gap-4"><div className="bg-indigo-600 p-3.5 rounded-[1.5rem] shadow-lg shadow-indigo-200"><Icon name="trending-up" className="text-white" size={26}/></div><div><h3 className="font-black text-slate-900 text-3xl tracking-tight">各專案問題數據分析</h3><p className="text-slate-400 text-[10px] font-black tracking-widest uppercase opacity-70 mt-1">Multi-Project Trend Visualization</p></div></div>
-                                        <div className="flex bg-slate-100 p-2 rounded-[1.5rem] border border-slate-200 w-full xl:w-auto shadow-inner"><button onClick={() => setTimeScale('daily')} className={`flex-1 xl:px-8 py-2.5 rounded-[1.2rem] text-xs font-black transition-all ${timeScale === 'daily' ? 'bg-white text-indigo-600 shadow-md ring-1 ring-slate-200' : 'text-slate-400'}`}>日維度</button><button onClick={() => setTimeScale('weekly')} className={`flex-1 xl:px-8 py-2.5 rounded-[1.2rem] text-xs font-black transition-all ${timeScale === 'weekly' ? 'bg-white text-indigo-600 shadow-md ring-1 ring-slate-200' : 'text-slate-400'}`}>週維度</button></div>
-                                    </div>
-                                    <div className="space-y-6">
-                                        {projects.filter(p => p.category === (activeTab==='general'?'online':'commercial')).map(p => (
-                                            <ProjectAnalysisRow key={p.id} project={p} timeScale={timeScale} weeklyRange={weeklyRange} trendData={getProjectTrendData(p.name)} />
-                                        ))}
+                                    <div className="h-[420px] flex flex-col items-center">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie data={chartData.slice(0,6)} cx="50%" cy="45%" labelLine={true} label={renderPieLabel} outerRadius={95} innerRadius={60} paddingAngle={4} dataKey="count">
+                                                    {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="#fff" strokeWidth={3} />)}
+                                                </Pie>
+                                                <Tooltip />
+                                            </PieChart>
+                                        </ResponsiveContainer>
                                     </div>
                                 </div>
                             </div>
-                        )}
+                        </div>
+
+                        {/* 長期趨勢區 - 遵循標準排序 */}
+                        <div className="bg-white p-10 rounded-[4rem] border shadow-xl mb-20 overflow-hidden">
+                            <div className="flex justify-between items-center mb-12">
+                                <div className="flex items-center gap-4"><div className="bg-indigo-600 p-3.5 rounded-[1.5rem] shadow-lg shadow-indigo-200"><Icon name="trending-up" className="text-white" size={26}/></div><h3 className="font-black text-slate-900 text-3xl tracking-tight">各專案問題數據分析 (標準排序)</h3></div>
+                                <div className="flex bg-slate-100 p-2 rounded-[1.5rem] shadow-inner">
+                                    <button onClick={() => setTimeScale('daily')} className={`px-8 py-2.5 rounded-[1.2rem] text-xs font-black transition-all ${timeScale === 'daily' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400'}`}>日維度</button>
+                                    <button onClick={() => setTimeScale('weekly')} className={`px-8 py-2.5 rounded-[1.2rem] text-xs font-black transition-all ${timeScale === 'weekly' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400'}`}>週維度</button>
+                                </div>
+                            </div>
+                            <div className="space-y-6">
+                                {currentList.map(name => (
+                                    <ProjectAnalysisRow key={name} name={name} timeScale={timeScale} trendData={getTrend()} />
+                                ))}
+                            </div>
+                        </div>
                     </main>
+                    
+                    <footer className="mt-10 border-t border-slate-200 py-16 opacity-30 text-center flex flex-col items-center gap-3">
+                        <Icon name="shield-check" size={32} className="text-slate-400"/>
+                        <p className="text-[10px] font-black tracking-[0.4em] uppercase">DataInsight Intelligence Suite • v4.48 GitHub Presentation</p>
+                    </footer>
                 </div>
             );
         }
