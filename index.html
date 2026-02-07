@@ -5,23 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DataInsight v4.48 PRO - 客服日報管理系統</title>
     
-    <!-- 引入基礎庫 (CDN) -->
+    <!-- 1. 核心樣式 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- 2. 核心庫 (順序極其重要) -->
+    <!-- React & React DOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel: 讓瀏覽器即時解析 JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Recharts 依賴: PropTypes 必須在 Recharts 前 -->
     <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
     <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+    
+    <!-- Lucide 圖示 -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
-        body { font-family: 'Inter', 'Noto Sans TC', sans-serif; background-color: #f8fafc; }
+        body { font-family: 'Inter', 'Noto Sans TC', sans-serif; background-color: #f8fafc; margin: 0; padding: 0; }
         .animate-fade-in { animation: fadeIn 0.3s ease-out both; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .expand-content { transition: max-height 0.5s ease, opacity 0.3s ease; overflow: hidden; }
+        
         #loading-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: white; display: flex; flex-direction: column;
@@ -33,22 +41,42 @@
             animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* 錯誤提示樣式 */
+        #error-display {
+            display: none; position: fixed; bottom: 0; left: 0; width: 100%;
+            background: #fee2e2; color: #b91c1c; padding: 15px; font-size: 12px;
+            z-index: 10000; border-top: 2px solid #ef4444; font-family: monospace;
+        }
     </style>
 </head>
 <body>
     <div id="loading-overlay">
         <div class="spinner"></div>
-        <p style="margin-top: 15px; font-weight: 800; color: #64748b; font-size: 14px;">系統數據載入中...</p>
+        <p style="margin-top: 15px; font-weight: 800; color: #64748b; font-size: 14px;">系統正在初始化腳本...</p>
     </div>
+
+    <!-- 錯誤診斷區 -->
+    <div id="error-display"></div>
 
     <div id="root"></div>
 
     <script type="text/babel">
+        // 捕捉初始化錯誤
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            const display = document.getElementById('error-display');
+            display.style.display = 'block';
+            display.innerHTML = `系統執行錯誤: ${msg} (第 ${lineNo} 行)`;
+            return false;
+        };
+
         const { useState, useMemo, useEffect } = React;
+        
+        // 確保 Recharts 全域變數已載入
         const { 
             BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
             ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area 
-        } = Recharts;
+        } = window.Recharts || {};
 
         // --- 核心遊戲排序定義 ---
         const ONLINE_ORDER = ['明星3缺1', '滿貫大亨', '捕魚大玩咖', '唯舞獨尊', '競技麻將2', '儲值專線', 'Vegas Frenzy', '大滿貫', '玩星派對', '幸運拉霸GO'];
@@ -58,8 +86,10 @@
 
         // --- 工具組件 ---
         const Icon = ({ name, size = 24, className = "" }) => {
-            useEffect(() => { lucide.createIcons(); }, [name]);
-            return <i data-lucide={name} className={className} style={{ width: size, height: size }}></i>;
+            useEffect(() => { 
+                if (window.lucide) window.lucide.createIcons(); 
+            }, [name]);
+            return <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>;
         };
 
         const StatCard = ({ title, value, prevValue, iconName, gradient }) => {
@@ -74,7 +104,7 @@
                         </div>
                     </div>
                     <div className="flex items-end gap-2">
-                        <h3 className="text-3xl font-black text-slate-800 tracking-tighter">{value.toLocaleString()}</h3>
+                        <h3 className="text-3xl font-black text-slate-800 tracking-tighter tabular-nums">{value.toLocaleString()}</h3>
                         <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-lg mb-1 ${diff >= 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
                             {diff >= 0 ? "▲" : "▼"} {Math.abs(percent)}%
                         </div>
@@ -106,7 +136,8 @@
         // --- 專案分析列 ---
         const ProjectAnalysisRow = ({ name, timeScale, trendData }) => {
             const [isExpanded, setIsExpanded] = useState(false);
-            const total = trendData.reduce((s, a) => s + a.count, 0);
+            if (!trendData) return null;
+            const total = trendData.reduce((s, a) => s + (a.count || 0), 0);
             
             return (
                 <div className={`rounded-[2.5rem] transition-all duration-500 border border-transparent ${isExpanded ? 'bg-slate-50 border-indigo-100 shadow-xl' : 'bg-white border-slate-100 hover:border-indigo-200'}`}>
@@ -126,7 +157,7 @@
                         </div>
                         <div className="text-right w-64 border-l pl-8">
                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{timeScale === 'weekly' ? '週期' : '日'}總計</p>
-                           <p className={`text-4xl font-black ${isExpanded ? 'text-indigo-600' : 'text-slate-800'}`}>{total.toLocaleString()}</p>
+                           <p className={`text-4xl font-black tabular-nums ${isExpanded ? 'text-indigo-600' : 'text-slate-800'}`}>{total.toLocaleString()}</p>
                         </div>
                     </div>
                     {isExpanded && (
@@ -174,10 +205,12 @@
             const [timeScale, setTimeScale] = useState('weekly');
             
             useEffect(() => {
+                // 模擬數據載入完畢後隱藏 Overlay
                 setTimeout(() => {
                     const overlay = document.getElementById('loading-overlay');
                     if (overlay) overlay.style.display = 'none';
-                }, 1000);
+                    if (window.lucide) window.lucide.createIcons();
+                }, 1500);
             }, []);
 
             const currentList = activeTab === 'general' ? ONLINE_ORDER : COMMERCIAL_ORDER;
@@ -195,7 +228,7 @@
                 const radius = innerRadius + (outerRadius - innerRadius) * 1.6;
                 const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
                 const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
-                return <text x={x} y={y} fill="#64748b" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="10" fontWeight="800">{`${name} ${value}件 (${(percent * 100).toFixed(0)}%)`}</text>;
+                return <text x={x} y={y} fill="#64748b" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="10" fontWeight="800">{`${name} ${value}件`}</text>;
             };
 
             return (
@@ -214,13 +247,11 @@
                     </header>
 
                     <main className="max-w-screen-2xl mx-auto px-8 mt-10">
-                        {/* 頁籤控制 */}
                         <div className="flex gap-4 mb-12">
                             <button onClick={() => setActiveTab('general')} className={`flex-1 py-6 rounded-[2.5rem] font-black text-xs uppercase tracking-[0.2em] transition-all shadow-md ${activeTab==='general'?'bg-indigo-600 text-white scale-[1.02]':'bg-white text-slate-400 border hover:bg-slate-50'}`}>線上遊戲 Online</button>
                             <button onClick={() => setActiveTab('commercial')} className={`flex-1 py-6 rounded-[2.5rem] font-black text-xs uppercase tracking-[0.2em] transition-all shadow-md ${activeTab==='commercial'?'bg-indigo-600 text-white scale-[1.02]':'bg-white text-slate-400 border hover:bg-slate-50'}`}>商用遊戲 Tech</button>
                         </div>
 
-                        {/* KPI 指標 */}
                         <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-12">
                             <StatCard title="問題回報" value={854} prevValue={720} iconName="file-text" gradient="bg-indigo-600" />
                             <StatCard title="電話進線" value={92} prevValue={105} iconName="phone" gradient="bg-emerald-600" />
@@ -229,7 +260,6 @@
                             <StatCard title="Redmine回單" value={188} prevValue={165} iconName="clipboard-check" gradient="bg-amber-600" />
                         </div>
 
-                        {/* 核心內容區 */}
                         <div className="grid grid-cols-1 xl:grid-cols-3 gap-10 mb-12 items-start">
                             <div className="xl:col-span-1 bg-white p-10 rounded-[3.5rem] border shadow-xl min-h-[600px]">
                                 <h3 className="flex items-center gap-4 font-black text-slate-900 text-3xl tracking-tighter mb-10"><Icon name="alert-triangle" className="text-rose-600" size={36}/> 本日重大異常</h3>
@@ -265,7 +295,6 @@
                             </div>
                         </div>
 
-                        {/* 長期趨勢區 - 遵循標準排序 */}
                         <div className="bg-white p-10 rounded-[4rem] border shadow-xl mb-20 overflow-hidden">
                             <div className="flex justify-between items-center mb-12">
                                 <div className="flex items-center gap-4"><div className="bg-indigo-600 p-3.5 rounded-[1.5rem] shadow-lg shadow-indigo-200"><Icon name="trending-up" className="text-white" size={26}/></div><h3 className="font-black text-slate-900 text-3xl tracking-tight">各專案問題數據分析 (標準排序)</h3></div>
@@ -290,6 +319,7 @@
             );
         }
 
+        // 啟動 React
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
