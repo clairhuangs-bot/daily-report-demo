@@ -1,163 +1,121 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>客服數據自動化分析系統 v7.5 | Enterprise Edition</title>
+/* 重大事件欄位 (Major Events Module) 優化邏輯 
+  1. 動態圖示特效：偵測事件長度套用呼吸燈。
+  2. 即時關鍵字搜尋：前端動態過濾列表。
+  3. 空狀態處理：無資料時顯示優雅提示。
+*/
 
-  <!-- ✅ GitHub Pages 友善：全部用 CDN，不需要 Node -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+// --- 1. CSS 動畫樣式 (請加入到 <style> 標籤中) ---
+/*
+  定義一個呼吸燈效果 (Breathing Light)，
+  運用於當有重大事件時的警告圖示。
+*/
+const style = `
+@keyframes breathing-alert {
+  0% { transform: scale(1); filter: drop-shadow(0 0 0px rgba(225, 29, 72, 0)); }
+  50% { transform: scale(1.1); filter: drop-shadow(0 0 8px rgba(225, 29, 72, 0.5)); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 0px rgba(225, 29, 72, 0)); }
+}
+.animate-breathing {
+  animation: breathing-alert 2s infinite ease-in-out;
+}
+`;
 
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap');
+// --- 2. JavaScript 邏輯與 React 結構 ---
 
-    :root { --primary:#2563eb; --primary-dark:#1e40af; --accent:#f59e0b; }
-    body { font-family:'Noto Sans TC',sans-serif; background:#f8fafc; color:#1e293b; }
+function MajorEventsModule({ currentReport }) {
+  // 搜尋關鍵字狀態
+  const [searchTerm, setSearchTerm] = useState('');
 
-    .glass-header { background:rgba(15,23,42,.95); backdrop-filter:blur(12px); border-bottom:1px solid rgba(255,255,255,.1); }
-    .custom-card { background:white; border-radius:1rem; box-shadow:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -1px rgba(0,0,0,.06); border:1px solid #e2e8f0; }
-    .sticky-col { position:sticky; left:0; background:white; z-index:20; border-right:2px solid #f1f5f9; }
+  // 邏輯：即時關鍵字搜尋
+  // 使用 useMemo 確保只有在搜尋詞或報告內容變動時才重新過濾，優化效能
+  const filteredIncidents = useMemo(() => {
+    if (!currentReport?.majorIncidents) return [];
+    
+    // 如果搜尋框為空，顯示全部事件
+    if (!searchTerm.trim()) return currentReport.majorIncidents;
 
-    .tab-btn { position:relative; padding:1rem 1.25rem; font-weight:800; color:#64748b; transition:all .2s; white-space:nowrap; font-size:.9rem; }
-    .tab-btn:hover { color:var(--primary); }
-    .tab-btn.active { color:var(--primary); }
-    .tab-btn.active::after { content:''; position:absolute; bottom:0; left:50%; transform:translateX(-50%); width:30px; height:4px; background:var(--primary); border-radius:2px; }
+    const term = searchTerm.toLowerCase();
+    return currentReport.majorIncidents.filter(incident => 
+      incident.summary.toLowerCase().includes(term) || 
+      incident.description.toLowerCase().includes(term)
+    );
+  }, [currentReport?.majorIncidents, searchTerm]);
 
-    .trend-up { color:#ef4444; font-weight:800; }
-    .trend-down { color:#10b981; font-weight:800; }
-    .peak-cell { background:linear-gradient(to bottom,#fffbeb,#fef3c7)!important; color:#92400e!important; }
+  // 邏輯：偵測事件長度
+  const hasEvents = currentReport?.majorIncidents?.length > 0;
 
-    .animate-fade { animation:fadeIn .25s ease-out forwards; }
-    @keyframes fadeIn { from { opacity:0; transform:translateY(10px);} to { opacity:1; transform:translateY(0);} }
-
-    ::-webkit-scrollbar { width:6px; height:6px; }
-    ::-webkit-scrollbar-track { background:#f1f5f9; }
-    ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:10px; }
-
-    .collapsible-content { transition:max-height .3s ease-out, opacity .3s; max-height:2000px; overflow:hidden; opacity:1; }
-    .collapsible-content.collapsed { max-height:0!important; opacity:0!important; pointer-events:none!important; margin:0!important; padding:0!important; }
-    .rotate-icon { transition:transform .3s; }
-    .is-collapsed .rotate-icon { transform:rotate(-90deg); }
-
-    .copy-sub-btn { padding:2px 8px; border-radius:6px; font-size:10px; font-weight:900; transition:all .2s; border:1px solid transparent; }
-    .copy-sub-btn:active { transform:scale(.95); }
-
-    .bar-container { display:flex; align-items:flex-end; gap:12px; height:200px; padding:20px 0; }
-    .bar-segment { width:40px; border-radius:4px 4px 0 0; transition:all .3s; position:relative; cursor:help; }
-    .bar-segment:hover { filter:brightness(1.1); transform:scaleX(1.05); }
-  </style>
-</head>
-
-<body class="pb-12 text-left">
-
-  <!-- Header -->
-  <header class="glass-header sticky top-0 z-50 px-6 py-4 mb-8 text-white">
-    <div class="max-w-[1400px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-      <div class="flex items-center gap-4">
-        <div class="bg-gradient-to-br from-blue-600 to-indigo-800 p-3 rounded-2xl shadow-lg text-white">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
-              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2-2H5a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
+  return (
+    <div className="xl:col-span-1 bg-white p-10 rounded-[3.5rem] border border-slate-200 premium-shadow min-h-[600px] flex flex-col">
+      
+      {/* 標題與動態圖示特效 */}
+      <div className="flex items-center gap-4 mb-8">
+        <div className="relative">
+          <AlertTriangle 
+            className={`text-rose-600 ${hasEvents ? 'animate-breathing' : 'opacity-40'}`} 
+            size={36} 
+          />
+          {/* 小紅點裝飾：若有事件則顯示 */}
+          {hasEvents && (
+            <span className="absolute top-0 right-0 flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+            </span>
+          )}
         </div>
-        <div class="text-left text-white">
-          <h1 class="text-xl font-black tracking-tight flex items-center gap-2">
-            客服數據自動化分析系統 <span class="text-blue-400 font-mono text-sm px-2 py-0.5 bg-blue-500/10 rounded">v7.5</span>
-          </h1>
-          <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Enterprise Data Management</p>
-        </div>
+        <h3 className="font-black text-slate-900 text-3xl tracking-tighter mb-0">本日重大異常</h3>
       </div>
 
-      <div class="flex items-center gap-4 bg-slate-800/50 p-1.5 rounded-2xl border border-slate-700 shadow-inner text-white">
-        <div class="px-3 flex flex-col text-left">
-          <span class="text-[9px] text-slate-500 font-black uppercase tracking-wider">基準日期選擇</span>
-          <input type="date" id="report-date" class="bg-transparent text-white font-bold outline-none text-sm cursor-pointer border-none p-0" onchange="refreshUI()">
-        </div>
-        <div class="w-px h-8 bg-slate-700"></div>
-
-        <div class="flex gap-2">
-          <button onclick="exportBackup()" class="p-2 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors" title="下載備份 (.json)">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-          </button>
-          <button onclick="document.getElementById('import-input').click()" class="p-2 text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition-colors" title="匯入備份還原">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
-            </svg>
-          </button>
-          <input type="file" id="import-input" class="hidden" accept=".json" onchange="importBackup(this)">
-        </div>
-
-        <div class="w-px h-8 bg-slate-700"></div>
-        <button onclick="clearAllData()" class="px-3 py-1.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-lg text-xs font-black transition-all">
-          重置系統數據
-        </button>
-      </div>
-    </div>
-  </header>
-
-  <main class="max-w-[1400px] mx-auto px-6 text-left">
-
-    <!-- Upload -->
-    <div id="upload-window" class="custom-card mb-8 overflow-hidden">
-      <div onclick="toggleUploadWindow()" class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors">
-        <div class="flex items-center gap-3">
-          <div class="p-2 bg-blue-600 rounded-lg text-white shadow-md">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
-                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
+      {/* 3. 即時關鍵字搜尋框 */}
+      {hasEvents && (
+        <div className="relative mb-6 animate-fade-in">
+          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+            <Search className="text-slate-400" size={16} />
           </div>
-          <span class="text-sm font-black text-slate-800">數據源匯入區 (已區分滿貫大亨/大滿貫)</span>
+          <input
+            type="search"
+            placeholder="搜尋關鍵字 (標題或內容)..."
+            className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-indigo-500/10 focus:bg-white transition-all"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
-        <svg id="upload-rotate-icon" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-slate-400 rotate-icon transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
-        </svg>
-      </div>
+      )}
 
-      <div id="upload-window-content" class="collapsible-content">
-        <div id="drop-zone" class="p-10 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50/20 transition-all group">
-          <input type="file" id="file-input" class="hidden" accept=".xlsx, .xls" multiple>
-          <div class="p-6 bg-blue-50 rounded-3xl text-blue-500 mb-4 group-hover:scale-110 transition-transform text-center">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4" />
-            </svg>
+      {/* 列表與空狀態處理 (Empty State) */}
+      <div className="space-y-4 flex-grow overflow-y-auto pr-1">
+        {filteredIncidents.length > 0 ? (
+          // 顯示過濾後的列表
+          filteredIncidents.map((m, i) => (
+            <div key={m.id || i} className="animate-fade-in" style={{ animationDelay: `${i * 0.1}s` }}>
+              <IncidentItem incident={m} />
+            </div>
+          ))
+        ) : (
+          // 邏輯：空狀態處理 (無事件或搜尋無結果)
+          <div className="flex flex-col items-center justify-center py-32 text-slate-300 gap-5 opacity-60">
+            <div className="bg-slate-100 p-6 rounded-full">
+              {searchTerm ? <Search size={48} /> : <CheckCircle size={48} />}
+            </div>
+            <div className="text-center">
+              <p className="font-black italic tracking-widest text-lg">
+                {searchTerm ? '查無匹配的異常紀錄' : '本日無重大事件'}
+              </p>
+              <p className="text-[10px] font-bold uppercase mt-2 tracking-[0.2em] text-slate-400">
+                {searchTerm ? '請嘗試其他關鍵字' : 'System Healthy & Stable'}
+              </p>
+            </div>
           </div>
-          <h3 class="text-xl font-black text-slate-800 text-center">選取或拖入 Excel 檔案</h3>
-          <p class="text-slate-400 mt-2 text-sm text-center font-bold italic">自動依照關鍵字過濾並彙整數據</p>
-        </div>
-
-        <div id="file-toggle-bar" class="hidden border-t border-slate-100 bg-slate-50 px-6 py-3 flex justify-between items-center">
-          <span class="text-xs font-black text-slate-500 uppercase tracking-wider">處理檔案數: <span id="file-count-badge">0</span></span>
-          <button onclick="clearUploadCache()" class="text-[10px] text-blue-600 font-bold underline">清除處理快取</button>
-        </div>
-        <div id="file-progress" class="p-4 flex flex-wrap gap-2 bg-slate-50/50 text-xs font-bold"></div>
+        )}
       </div>
-    </div>
 
-    <!-- Tabs -->
-    <div id="tab-container" class="hidden mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-px">
-      <div class="flex items-center gap-2 overflow-x-auto pb-px">
-        <button class="tab-btn active" data-tab="summary" onclick="switchTab('summary')">每日彙整</button>
-        <button class="tab-btn" data-tab="reporting" onclick="switchTab('reporting')">回報+信件 📊</button>
-        <button class="tab-btn" data-tab="tickets" onclick="switchTab('tickets')">回單統計 📄</button>
-        <button class="tab-btn" data-tab="phoneAnalysis" onclick="switchTab('phoneAnalysis')">電話進線分析 📞</button>
-        <button class="tab-btn" data-tab="history" onclick="switchTab('history')">趨勢歷程 👑</button>
-        <button class="tab-btn" data-tab="busyAnalysis" onclick="switchTab('busyAnalysis')">忙碌熱點分析 🔥</button>
-        <button class="tab-btn" data-tab="full" onclick="switchTab('full')">原始明細</button>
-      </div>
-      <button id="copy-btn" class="mb-2 md:mb-0 px-6 py-3 bg-slate-900 text-white rounded-xl font-black text-xs shadow-lg hover:bg-black active:scale-[0.98] transition-all flex items-center gap-2">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m-7 10h7m-7-3h7" />
-        </svg>
-        複製目前報表
-      </button>
+      {/* 頁腳小提示 */}
+      {hasEvents && filteredIncidents.length > 0 && (
+        <div className="mt-4 text-right">
+          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+            Showing {filteredIncidents.length} of {currentReport.majorIncidents.length} events
+          </span>
+        </div>
+      )}
     </div>
-
-    <!-- Result -->
-    <div id="result-container" cl
+  );
+}
