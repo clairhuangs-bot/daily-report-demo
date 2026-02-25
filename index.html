@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DataInsight v4.52 PRO - 遊戲數據決策系統 (重大事件優化版)</title>
+    <title>DataInsight v4.52 PRO - 遊戲數據決策系統 (警示特效優化版)</title>
     
     <!-- 1. 核心樣式與字體 -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -18,7 +18,7 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
-        /* 視覺優化：柔和底色，減少螢幕刺激 */
+        /* 視覺優化：柔和底色 */
         body { 
             font-family: 'Inter', 'Noto Sans TC', sans-serif; 
             background-color: #f1f5f9; 
@@ -30,14 +30,24 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .expand-content { transition: max-height 0.5s ease, opacity 0.3s ease; overflow: hidden; }
         
-        /* 任務指令 1：動態圖示特效 (呼吸燈) */
-        @keyframes breathing-alert {
-            0% { transform: scale(1); filter: drop-shadow(0 0 0px rgba(225, 29, 72, 0)); }
-            50% { transform: scale(1.1); filter: drop-shadow(0 0 10px rgba(225, 29, 72, 0.5)); }
-            100% { transform: scale(1); filter: drop-shadow(0 0 0px rgba(225, 29, 72, 0)); }
+        /* 任務指令 2：⚠️ 圖示閃爍特效 (Flicker Effect) */
+        @keyframes flicker-alert {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.2; transform: scale(1.1); }
         }
-        .animate-breathing { animation: breathing-alert 2s infinite ease-in-out; }
+        .animate-flicker { 
+            animation: flicker-alert 0.8s infinite ease-in-out;
+            color: #ef4444; /* 警示紅色 */
+        }
 
+        .premium-shadow { box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05); }
+        .clickable-date { cursor: pointer; transition: all 0.2s; }
+        .clickable-date:hover { background-color: #e2e8f0 !important; color: #4f46e5 !important; }
+        .active-date-column { background-color: #eff6ff !important; border-radius: 8px; }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        
         #loading-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #ffffff; display: flex; flex-direction: column;
@@ -49,20 +59,12 @@
             animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        .premium-shadow { box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05); }
-        .clickable-date { cursor: pointer; transition: all 0.2s; }
-        .clickable-date:hover { background-color: #e2e8f0 !important; color: #4f46e5 !important; }
-        .active-date-column { background-color: #eff6ff !important; border-radius: 8px; }
-        
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     </style>
 </head>
 <body class="antialiased">
     <div id="loading-overlay">
         <div class="spinner"></div>
-        <p style="margin-top: 15px; font-weight: 800; color: #64748b; font-size: 14px;">正在校準重大事件連動數據...</p>
+        <p style="margin-top: 15px; font-weight: 800; color: #64748b; font-size: 14px;">正在初始化重大事件警示模組...</p>
     </div>
 
     <div id="root"></div>
@@ -74,7 +76,7 @@
             ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area 
         } = window.Recharts;
 
-        // --- 核心專案配置 ---
+        // --- 1. 遊戲專屬項目配置 ---
         const ONLINE_ORDER = ['明星3缺1', '滿貫大亨', '捕魚大玩咖', '唯舞獨尊', '競技麻將2', '儲值專線', 'Vegas Frenzy', '大滿貫', '玩星派對', '幸運拉霸GO'];
         const COMMERCIAL_ORDER = ['金猴爺', '金虎爺', '金好運娛樂城', '金好運娛樂城MY (TH,SG)', '金好運娛樂城JP', '海王寶藏', '撞球好手', '三國戰紀', 'Slotverse', '跑跑英雄'];
 
@@ -87,7 +89,7 @@
 
         const COLORS = ['#6366f1', '#0ea5e9', '#f59e0b', '#ec4899', '#8b5cf6', '#10b981', '#f43f5e', '#64748b', '#06b6d4', '#4f46e5'];
 
-        // --- 工具組件 ---
+        // --- 2. 工具組件 ---
         const Icon = ({ name, size = 24, className = "" }) => {
             useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
             return <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>;
@@ -129,25 +131,21 @@
                     {isExpanded && (
                         <div className="px-5 pb-4 text-xs text-slate-600 leading-relaxed border-t border-slate-100 pt-3 bg-white rounded-b-2xl">
                             {incident.description}
-                            <div className="mt-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">{incident.time} 系統紀錄</div>
+                            <div className="mt-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">{incident.time} 紀錄點</div>
                         </div>
                     )}
                 </div>
             );
         };
 
-        // --- 核心優化：重大事件模組 (Major Events Module) ---
+        // --- 3. 重大事件模組 (優化閃爍特效與動態標題) ---
         const MajorEventsModule = ({ currentReport }) => {
-            // 任務指令 3：即時關鍵字搜尋狀態
             const [searchTerm, setSearchTerm] = useState('');
-            
-            // 基礎資料邏輯
             const rawIncidents = currentReport?.majorIncidents || [];
             
-            // 任務指令 1：偵測事件長度
+            // 核心邏輯：判斷是否有重大事件
             const hasEvents = rawIncidents.length > 0;
 
-            // 任務指令 3：關鍵字搜尋邏輯 (過濾標題與內容)
             const filteredIncidents = useMemo(() => {
                 if (!searchTerm.trim()) return rawIncidents;
                 const term = searchTerm.toLowerCase();
@@ -160,58 +158,42 @@
             return (
                 <div className="xl:col-span-1 bg-white p-10 rounded-[3.5rem] border border-slate-200 premium-shadow min-h-[600px] flex flex-col transition-all duration-500">
                     
-                    {/* 標題與動態圖示特效 (指令 1) */}
+                    {/* 標題與圖示特效 (任務指令 1 & 2) */}
                     <div className="flex items-center justify-between mb-8">
                         <div className="flex items-center gap-4">
                             <div className="relative">
+                                {/* 調整項目 2：取消呼吸燈，改為閃爍特效圖示 */}
                                 <Icon 
                                     name="alert-triangle" 
                                     size={36} 
-                                    className={`text-rose-600 ${hasEvents ? 'animate-breathing' : 'opacity-20'}`} 
+                                    className={hasEvents ? 'animate-flicker' : 'text-slate-200'} 
                                 />
-                                {hasEvents && (
-                                    <span className="absolute top-0 right-0 flex h-3 w-3">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
-                                    </span>
-                                )}
                             </div>
-                            <h3 className="font-black text-slate-900 text-3xl tracking-tighter">本日重大異常</h3>
+                            {/* 調整項目 1：動態標題連動 */}
+                            <h3 className="font-black text-slate-900 text-3xl tracking-tighter">
+                                {hasEvents ? "今日重大事件 ⚠️" : "本日無重大事件"}
+                            </h3>
                         </div>
                     </div>
 
-                    {/* 任務指令 3：即時關鍵字搜尋框 (僅在有事件或搜尋時顯示) */}
                     {(hasEvents || searchTerm) && (
                         <div className="relative mb-6 animate-fade-in">
-                            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                                <Icon name="search" size={16} className="text-slate-400" />
-                            </div>
-                            <input
-                                type="search"
-                                placeholder="搜尋標題或描述內容..."
-                                className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-indigo-500/10 focus:bg-white transition-all shadow-inner"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                            />
+                            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none"><Icon name="search" size={16} className="text-slate-400" /></div>
+                            <input type="search" placeholder="搜尋事件關鍵字..." className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-indigo-500/10 focus:bg-white transition-all shadow-inner" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                         </div>
                     )}
 
-                    {/* 列表與任務指令 2：空狀態處理 (Empty State) */}
                     <div className="space-y-3 flex-grow overflow-y-auto pr-1">
                         {filteredIncidents.length > 0 ? (
                             filteredIncidents.map((inc) => <IncidentItem key={inc.id} incident={inc} />)
                         ) : (
-                            <div className="flex flex-col items-center justify-center py-32 text-slate-300 gap-5 opacity-60 animate-fade-in">
-                                <div className="bg-slate-100 p-6 rounded-full">
-                                    <Icon name={searchTerm ? "search-x" : "check-circle"} size={64} className="text-slate-200" />
-                                </div>
+                            <div className="flex flex-col items-center justify-center py-32 text-slate-300 gap-5 opacity-40 animate-fade-in">
+                                <Icon name={searchTerm ? "search-x" : "shield-check"} size={64} className="text-slate-200" />
                                 <div className="text-center">
                                     <p className="font-black italic tracking-widest text-lg">
-                                        {searchTerm ? '查無匹配的異常紀錄' : '本日無重大事件'}
+                                        {searchTerm ? '查無匹配結果' : '狀態：系統營運穩定'}
                                     </p>
-                                    <p className="text-[10px] font-bold uppercase mt-2 tracking-[0.2em] text-slate-400">
-                                        {searchTerm ? '請嘗試其他關鍵字' : 'System Healthy & Stable'}
-                                    </p>
+                                    <p className="text-[10px] font-bold uppercase mt-2 tracking-[0.2em] text-slate-400">All systems functional</p>
                                 </div>
                             </div>
                         )}
@@ -220,7 +202,7 @@
             );
         };
 
-        // --- 專案分析列 ---
+        // --- 4. 專案分析列 ---
         const ProjectAnalysisRow = ({ name, trendData, timeScale, currentSelectedDate, onDateClick, activeTab }) => {
             const [isExpanded, setIsExpanded] = useState(false);
             if (!trendData) return null;
@@ -288,7 +270,7 @@
             );
         };
 
-        // --- 主應用 ---
+        // --- 5. 主應用 ---
         function App() {
             const [activeTab, setActiveTab] = useState('general'); 
             const [timeScale, setTimeScale] = useState('daily');
@@ -302,7 +284,6 @@
                     const d = new Date(startDate);
                     d.setDate(startDate.getDate() + i);
                     const dateStr = d.toISOString().split('T')[0];
-                    
                     const makeMockStats = (base) => ({
                         tickets: base + Math.floor(Math.random()*100), phoneCalls: 60, emails: 280, alertMails: 20, redmineReplies: 120
                     });
@@ -310,14 +291,11 @@
                     const onlineIncidents = [];
                     const commercialIncidents = [];
                     if (dateStr === '2026-02-07') {
-                        onlineIncidents.push({ id: "o1", severity: "critical", summary: "明星3缺1 iOS 支付驗證逾時", description: "iOS 金流憑證更換交握延遲，影響玩家儲值入點大約 30 分鐘。", time: "14:30" });
-                        onlineIncidents.push({ id: "o2", severity: "warning", summary: "伺服器例行維護公告延遲", description: "官網公告系統快取問題，導致部分玩家未能即時收到維護通知。", time: "10:15" });
+                        onlineIncidents.push({ id: "o1", severity: "critical", summary: "明星3缺1 iOS 支付體驗故障", description: "iOS金流驗證延遲，造成部分品項無法及時到帳。", time: "14:30" });
+                        commercialIncidents.push({ id: "c1", severity: "critical", summary: "商用驗證 API 響應大規模延遲", description: "KYC系統負載過高，影響新用戶認證程序。", time: "11:20" });
                     }
                     if (dateStr === '2026-02-06') {
-                        onlineIncidents.push({ id: "o3", severity: "warning", summary: "連假活動登入排隊壅塞", description: "週末慶典活動開啟導致瞬時流量峰值，玩家平均排隊約 3 分鐘。", time: "19:00" });
-                    }
-                    if (dateStr === '2026-02-05') {
-                        commercialIncidents.push({ id: "c1", severity: "critical", summary: "商用驗證 API 響應延遲", description: "KYC 驗證系統負載過高，部分新用戶無法順利完成身分認證程序。", time: "10:15" });
+                        onlineIncidents.push({ id: "o2", severity: "warning", summary: "連假週末登入流量高峰", description: "伺服器排隊人數增加，玩家需等待約 3 分鐘。", time: "19:00" });
                     }
 
                     db[dateStr] = {
@@ -328,7 +306,7 @@
                     [...ONLINE_ORDER, ...COMMERCIAL_ORDER].forEach(g => {
                         const cats = GAME_ISSUE_CONFIG[g] || GAME_ISSUE_CONFIG['Default'];
                         const data = { count: 0 };
-                        cats.forEach(c => { const v = 3 + Math.floor(Math.random()*15); data[c] = v; data.count += v; });
+                        cats.forEach(c => { const v = 3+Math.floor(Math.random()*15); data[c] = v; data.count += v; });
                         if (ONLINE_ORDER.includes(g)) db[dateStr].general.gameStats[g] = data;
                         else db[dateStr].commercial.gameStats[g] = data;
                     });
@@ -340,11 +318,7 @@
 
             const datesList = useMemo(() => Object.keys(database).sort().reverse(), [database]);
             const currentReport = database[selectedDate]?.[activeTab] || null;
-            const prevReport = useMemo(() => {
-                const idx = datesList.indexOf(selectedDate);
-                return idx < datesList.length - 1 ? database[datesList[idx+1]]?.[activeTab] : null;
-            }, [database, selectedDate, activeTab, datesList]);
-
+            
             const chartData = useMemo(() => {
                 if (!currentReport) return [];
                 const list = activeTab === 'general' ? ONLINE_ORDER : COMMERCIAL_ORDER;
@@ -394,7 +368,7 @@
                         <div className="max-w-screen-2xl mx-auto px-8 w-full flex justify-between items-center">
                             <div className="flex items-center gap-4">
                                 <div className="bg-slate-900 p-2.5 rounded-2xl shadow-lg rotate-2"><Icon name="shield-check" className="text-white" /></div>
-                                <div><h1 className="font-black text-2xl tracking-tighter text-slate-900 leading-none">DataInsight <span className="bg-indigo-600 text-white text-[9px] px-2 py-0.5 rounded uppercase ml-2">v4.52 PRO</span></h1><p className="text-[9px] text-slate-400 font-black tracking-widest uppercase mt-1">決策級連動數據平台</p></div>
+                                <div><h1 className="font-black text-2xl tracking-tighter text-slate-900 leading-none">DataInsight <span className="bg-indigo-600 text-white text-[9px] px-2 py-0.5 rounded uppercase ml-2">v4.52 PRO</span></h1><p className="text-[9px] text-slate-400 font-black tracking-widest uppercase mt-1">決策級連動數據展示平台</p></div>
                             </div>
                             <div className="flex items-center gap-3 px-5 py-2.5 bg-slate-200/50 rounded-2xl border border-slate-300/50">
                                 <Icon name="calendar" size={15} className="text-slate-500" />
@@ -414,17 +388,15 @@
                         {currentReport && (
                             <div className="animate-fade-in">
                                 <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-12">
-                                    <StatCard title="問題回報" value={currentReport.stats.tickets} prevValue={prevReport?.stats.tickets} iconName="file-text" gradient="bg-indigo-600" />
-                                    <StatCard title="電話進線" value={currentReport.stats.phoneCalls} prevValue={prevReport?.stats.phoneCalls} iconName="phone" gradient="bg-emerald-600" />
-                                    <StatCard title="信箱回報" value={currentReport.stats.emails} prevValue={prevReport?.stats.emails} iconName="mail" gradient="bg-purple-600" />
-                                    <StatCard title="警示信件" value={currentReport.stats.alertMails} prevValue={prevReport?.stats.alertMails} iconName="activity" gradient="bg-rose-600" />
-                                    <StatCard title="Redmine回單" value={currentReport.stats.redmineReplies} prevValue={prevReport?.stats.redmineReplies} iconName="clipboard-check" gradient="bg-amber-600" />
+                                    <StatCard title="問題回報" value={currentReport.stats.tickets} prevValue={500} iconName="file-text" gradient="bg-indigo-600" />
+                                    <StatCard title="電話進線" value={currentReport.stats.phoneCalls} prevValue={75} iconName="phone" gradient="bg-emerald-600" />
+                                    <StatCard title="信箱回報" value={currentReport.stats.emails} prevValue={280} iconName="mail" gradient="bg-purple-600" />
+                                    <StatCard title="警示信件" value={currentReport.stats.alertMails} prevValue={15} iconName="activity" gradient="bg-rose-600" />
+                                    <StatCard title="Redmine回單" value={currentReport.stats.redmineReplies} prevValue={130} iconName="clipboard-check" gradient="bg-amber-600" />
                                 </div>
 
                                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-10 mb-12 items-start">
-                                    {/* 核心優化模組：重大事件 */}
                                     <MajorEventsModule currentReport={currentReport} />
-
                                     <div className="xl:col-span-2 bg-white p-10 rounded-[3.5rem] border border-slate-200 premium-shadow min-h-[600px] overflow-hidden">
                                         <h3 className="font-black text-slate-900 text-3xl tracking-tighter flex items-center gap-3 mb-12"><Icon name="layers" className="text-indigo-600" size={28}/> 遊戲問題排行與佔比 ({selectedDate})</h3>
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
