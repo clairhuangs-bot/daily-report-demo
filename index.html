@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DataInsight v4.53 PRO - 遊戲數據決策系統 (重大事件呼吸優化版)</title>
+    <title>DataInsight v4.53 PRO - 遊戲數據決策系統 (日期邏輯修正版)</title>
     
     <!-- 1. 核心樣式與字體 -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -18,7 +18,6 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
-        /* 視覺優化：柔和底色，減少眼睛負擔 */
         body { 
             font-family: 'Inter', 'Noto Sans TC', sans-serif; 
             background-color: #f1f5f9; 
@@ -29,7 +28,7 @@
         .animate-fade-in { animation: fadeIn 0.3s ease-out both; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* 任務指令：柔和呼吸式動畫 (Opacity 漸變) */
+        /* 柔和呼吸式動畫 (Opacity 漸變) */
         @keyframes breathing-soft {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.45; }
@@ -66,18 +65,23 @@
             animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .date-picker-modal {
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            animation: fadeIn 0.2s ease-out;
+        }
     </style>
 </head>
 <body class="antialiased">
     <div id="loading-overlay">
         <div class="spinner"></div>
-        <p style="margin-top: 15px; font-weight: 800; color: #64748b; font-size: 14px;">正在校準全域決策矩陣...</p>
+        <p style="margin-top: 15px; font-weight: 800; color: #64748b; font-size: 14px;">正在校準日期邏輯...</p>
     </div>
 
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useMemo, useEffect } = React;
+        const { useState, useMemo, useEffect, useRef } = React;
         const { 
             BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
             ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, ReferenceLine 
@@ -89,10 +93,135 @@
         const ISSUE_TYPES = ["帳號問題", "伺服器相關問題", "儲值相關問題", "安裝、下載", "系統相關問題", "活動領獎問題", "規則設定問題", "反應與建議", "客戶服務", "行動版問題"];
         const COLORS = ['#6366f1', '#0ea5e9', '#f59e0b', '#ec4899', '#8b5cf6', '#10b981', '#f43f5e', '#64748b', '#06b6d4', '#4f46e5'];
 
-        // --- 工具組件 ---
+        // --- 輔助工具：日期有效性檢查與解析 ---
+        const safeParseDate = (dateStr) => {
+            const d = new Date(dateStr);
+            // 檢查日期是否有效 (避免 NaN 或 Invalid Date)
+            if (isNaN(d.getTime())) {
+                return new Date(); // 回退至今天
+            }
+            return d;
+        };
+
         const Icon = ({ name, size = 24, className = "" }) => {
             useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
             return <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>;
+        };
+
+        // --- 核心修正：高階月曆選取組件 ---
+        const DatePicker = ({ selectedDate, onSelect, availableDates }) => {
+            const [isOpen, setIsOpen] = useState(false);
+            // 修正點 1: 初始 viewDate 使用安全解析
+            const [viewDate, setViewDate] = useState(() => safeParseDate(selectedDate));
+            const wrapperRef = useRef(null);
+
+            // 修正點 2: 當外部選取日期變動時，同步更新內部視圖日期
+            useEffect(() => {
+                const parsed = safeParseDate(selectedDate);
+                setViewDate(parsed);
+            }, [selectedDate]);
+
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+                        setIsOpen(false);
+                    }
+                };
+                document.addEventListener("mousedown", handleClickOutside);
+                return () => document.removeEventListener("mousedown", handleClickOutside);
+            }, []);
+
+            const daysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+            const firstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
+
+            const generateDays = () => {
+                const year = viewDate.getFullYear();
+                const month = viewDate.getMonth();
+                const totalDays = daysInMonth(year, month);
+                const firstDay = firstDayOfMonth(year, month);
+                const days = [];
+
+                for (let i = 0; i < firstDay; i++) days.push(null);
+                for (let i = 1; i <= totalDays; i++) {
+                    const d = new Date(year, month, i);
+                    // 格式化為字串以比對可用日期
+                    const yyyy = d.getFullYear();
+                    const mm = String(d.getMonth() + 1).padStart(2, '0');
+                    const dd = String(d.getDate()).padStart(2, '0');
+                    const dateStr = `${yyyy}-${mm}-${dd}`;
+                    days.push({ day: i, dateStr, isAvailable: availableDates.includes(dateStr) });
+                }
+                return days;
+            };
+
+            const changeMonth = (offset) => {
+                const newDate = new Date(viewDate.setMonth(viewDate.getMonth() + offset));
+                setViewDate(new Date(newDate));
+            };
+
+            return (
+                <div className="relative" ref={wrapperRef}>
+                    <div 
+                        onClick={() => setIsOpen(!isOpen)}
+                        className="flex items-center gap-3 px-5 py-2.5 bg-white rounded-2xl border border-slate-200 shadow-sm cursor-pointer hover:border-indigo-400 transition-all select-none"
+                    >
+                        <Icon name="calendar" size={16} className="text-indigo-500" />
+                        <span className="text-sm font-black text-slate-700 tabular-nums">{selectedDate}</span>
+                        <Icon name="chevron-down" size={14} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                    </div>
+
+                    {isOpen && (
+                        <div className="absolute right-0 top-full mt-3 w-80 bg-white border border-slate-200 rounded-[2rem] p-6 z-[100] date-picker-modal">
+                            <div className="flex justify-between items-center mb-6">
+                                <button onClick={() => changeMonth(-1)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors">
+                                    <Icon name="chevron-left" size={20} />
+                                </button>
+                                <div className="text-center">
+                                    <p className="text-sm font-black text-slate-800 uppercase tracking-widest">
+                                        {/* 修正點 3: 確保 viewDate 有效才執行 toLocaleString */}
+                                        {!isNaN(viewDate.getTime()) ? viewDate.toLocaleString('zh-TW', { month: 'long' }) : '...'}
+                                    </p>
+                                    <p className="text-[10px] font-black text-indigo-500">{viewDate.getFullYear()}</p>
+                                </div>
+                                <button onClick={() => changeMonth(1)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors">
+                                    <Icon name="chevron-right" size={20} />
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-7 gap-1 mb-2">
+                                {['日', '一', '二', '三', '四', '五', '六'].map(w => (
+                                    <div key={w} className="text-center text-[10px] font-black text-slate-400 py-2">{w}</div>
+                                ))}
+                            </div>
+
+                            <div className="grid grid-cols-7 gap-1">
+                                {generateDays().map((d, i) => {
+                                    if (!d) return <div key={`empty-${i}`} className="p-2"></div>;
+                                    const isSelected = d.dateStr === selectedDate;
+                                    return (
+                                        <div 
+                                            key={d.dateStr}
+                                            onClick={() => {
+                                                if (d.isAvailable) {
+                                                    onSelect(d.dateStr);
+                                                    setIsOpen(false);
+                                                }
+                                            }}
+                                            className={`
+                                                p-2 text-center text-xs font-bold rounded-xl cursor-pointer transition-all
+                                                ${d.isAvailable ? 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-600' : 'text-slate-200 cursor-not-allowed'}
+                                                ${isSelected ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:text-white' : ''}
+                                            `}
+                                        >
+                                            {d.day}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
         };
 
         const StatCard = ({ title, value, prevValue, iconName, gradient }) => {
@@ -108,7 +237,7 @@
                         <h3 className="text-3xl font-black text-slate-800 tracking-tighter tabular-nums">{value.toLocaleString()}</h3>
                         {percent !== 0 && (
                             <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-lg mb-1 ${diff >= 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                                {diff >= 0 ? "▲" : "▼"} {Math.abs(percent)}%
+                                {diff >= 0 ? <Icon name="arrow-up-right" size={12}/> : <Icon name="arrow-down-right" size={12}/>} {Math.abs(percent)}%
                             </div>
                         )}
                     </div>
@@ -141,15 +270,14 @@
             );
         };
 
-        // --- 重大事件模組 (優化呼吸與搜尋邏輯) ---
-        const MajorEventsModule = ({ currentReport, database, activeTab }) => {
+        const MajorEventsModule = ({ currentReport, database, activeTab, selectedDate }) => {
             const [searchTerm, setSearchTerm] = useState('');
-            
+            useEffect(() => { setSearchTerm(''); }, [selectedDate]);
+
             const rawIncidentsToday = currentReport?.majorIncidents || [];
             const hasEventsToday = rawIncidentsToday.length > 0;
             const isSearching = searchTerm.trim().length > 0;
 
-            // 跨日期歷史檢索邏輯
             const filteredResults = useMemo(() => {
                 if (!isSearching) return rawIncidentsToday;
                 const term = searchTerm.toLowerCase();
@@ -165,61 +293,32 @@
                 return globalMatches.sort((a, b) => b.date.localeCompare(a.date));
             }, [database, activeTab, searchTerm, rawIncidentsToday, isSearching]);
 
-            // 任務指令：動態樣式邏輯
-            const titleText = isSearching 
-                ? `搜尋結果 (${filteredResults.length})` 
-                : (hasEventsToday ? "今日重大事件" : "本日無重大事件");
-            
-            const titleColorClass = isSearching 
-                ? "text-indigo-600" 
-                : (hasEventsToday ? "text-red-600 animate-breathing-soft" : "text-slate-400");
+            const titleText = isSearching ? `搜尋結果 (${filteredResults.length})` : (hasEventsToday ? "今日重大事件" : "本日無重大事件");
+            const titleColorClass = isSearching ? "text-indigo-600" : (hasEventsToday ? "text-red-600 animate-breathing-soft" : "text-slate-400");
 
             return (
                 <div className="xl:col-span-1 bg-white p-10 rounded-[3.5rem] border border-slate-200 premium-shadow min-h-[600px] flex flex-col transition-all duration-500">
                     <div className="flex items-center justify-between mb-8">
                         <div className="flex items-center gap-4">
                             <div className="relative">
-                                {/* 警示圖示：有事件時變紅並脈動 */}
-                                <Icon 
-                                    name={isSearching ? "search" : "alert-triangle"} 
-                                    size={36} 
-                                    className={isSearching ? "text-indigo-400" : (hasEventsToday ? 'text-red-500 animate-icon-pulse' : 'text-slate-200')} 
-                                />
+                                <Icon name={isSearching ? "search" : "alert-triangle"} size={36} className={isSearching ? "text-indigo-400" : (hasEventsToday ? 'text-red-500 animate-icon-pulse' : 'text-slate-200')} />
                             </div>
                             <h3 className={`font-black text-3xl tracking-tighter transition-all duration-500 ${titleColorClass}`}>
                                 {titleText}
                             </h3>
                         </div>
                     </div>
-
-                    {/* 固定顯示的搜尋欄位 */}
                     <div className="relative mb-6">
-                        <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                            <Icon name="search" size={16} className="text-slate-400" />
-                        </div>
-                        <input 
-                            type="search" 
-                            placeholder="全歷史關鍵字模糊搜尋..." 
-                            className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-indigo-500/10 focus:bg-white transition-all shadow-inner" 
-                            value={searchTerm} 
-                            onChange={(e) => setSearchTerm(e.target.value)} 
-                        />
+                        <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none"><Icon name="search" size={16} className="text-slate-400" /></div>
+                        <input type="search" placeholder="搜尋全歷史重大事件..." className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-indigo-500/10 focus:bg-white transition-all shadow-inner" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>
-
                     <div className="space-y-3 flex-grow overflow-y-auto pr-1">
                         {filteredResults.length > 0 ? (
                             filteredResults.map((inc, i) => <IncidentItem key={inc.id || i} incident={inc} showDate={isSearching} />)
                         ) : (
                             <div className="flex flex-col items-center justify-center py-32 text-slate-300 gap-5 opacity-40 animate-fade-in">
                                 <Icon name={isSearching ? "search-x" : "shield-check"} size={72} className="text-slate-200" />
-                                <div className="text-center">
-                                    <p className="font-black italic tracking-widest text-lg text-slate-400">
-                                        {isSearching ? '查無符合條件' : '營運狀態：穩定'}
-                                    </p>
-                                    <p className="text-[10px] font-bold uppercase mt-2 tracking-[0.2em] text-slate-400">
-                                        All Systems Normal
-                                    </p>
-                                </div>
+                                <p className="font-black italic tracking-widest text-lg text-slate-400">{isSearching ? '查無符合條件' : '營運狀態：穩定'}</p>
                             </div>
                         )}
                     </div>
@@ -227,97 +326,53 @@
             );
         };
 
-        // --- 專案分析列 (維持簡約單線趨勢) ---
         const ProjectAnalysisRow = ({ name, trendData, timeScale, currentSelectedDate, onDateClick }) => {
             const [isExpanded, setIsExpanded] = useState(false);
             if (!trendData) return null;
-
             const totalInView = trendData.reduce((s, a) => s + (a.count || 0), 0);
             const avgValue = useMemo(() => totalInView / trendData.length, [totalInView, trendData]);
 
-            // 高峰點判斷與渲染
             const customizedDot = (props) => {
                 const { cx, cy, payload } = props;
                 if (payload.count > avgValue * 1.3) { 
                     return (
-                        <g key={`peak-${payload.name}`}>
-                            <circle cx={cx} cy={cy} r={7} fill="#f43f5e" stroke="#fff" strokeWidth={2} className="animate-pulse" />
-                            <text x={cx} y={cy - 12} fill="#f43f5e" fontSize="10" fontWeight="900" textAnchor="middle">PEAK</text>
-                        </g>
+                        <g key={`peak-${payload.name}`}><circle cx={cx} cy={cy} r={7} fill="#f43f5e" stroke="#fff" strokeWidth={2} className="animate-pulse" /><text x={cx} y={cy - 12} fill="#f43f5e" fontSize="10" fontWeight="900" textAnchor="middle">PEAK</text></g>
                     );
                 }
                 return <circle key={`dot-${payload.name}`} cx={cx} cy={cy} r={4} fill="#fff" stroke="#6366f1" strokeWidth={2} />;
             };
 
             return (
-                <div className={`rounded-[2.5rem] transition-all duration-500 border border-transparent mb-4 ${isExpanded ? 'bg-white shadow-xl ring-1 ring-indigo-100' : 'bg-white border-slate-100 hover:border-indigo-300'} premium-shadow`}>
+                <div className={`rounded-[2.5rem] transition-all duration-500 border border-transparent mb-4 ${isExpanded ? 'bg-white shadow-xl ring-1 ring-indigo-100' : 'bg-white border-slate-200 hover:border-indigo-300'} premium-shadow`}>
                     <div className="px-8 py-7 flex items-center justify-between cursor-pointer select-none" onClick={() => setIsExpanded(!isExpanded)}>
                         <div className="flex items-center gap-6 w-72 shrink-0">
-                            <div className={`p-3.5 rounded-2xl transition-all shadow-md ${isExpanded ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-400'}`}>
-                                <Icon name={isExpanded ? "chevron-down" : "chevron-right"} size={24} />
-                            </div>
-                            <div>
-                                <span className="font-black text-slate-800 text-xl tracking-tight block">{name}</span>
-                                <p className="text-[10px] font-black text-slate-400 uppercase mt-1 leading-none">{timeScale === 'weekly' ? '週期總量' : '近期趨勢'}</p>
-                            </div>
+                            <div className={`p-3.5 rounded-2xl transition-all shadow-md ${isExpanded ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-400'}`}><Icon name={isExpanded ? "chevron-down" : "chevron-right"} size={24} /></div>
+                            <div><span className="font-black text-slate-800 text-xl tracking-tight block">{name}</span><p className="text-[10px] font-black text-slate-400 uppercase mt-1 leading-none">{timeScale === 'weekly' ? '週期總量' : '近期趨勢'}</p></div>
                         </div>
-                        
                         <div className="flex-grow h-14 max-w-lg mx-10 opacity-40">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={trendData}>
-                                    <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={2.5} dot={false} isAnimationActive={false} />
-                                </LineChart>
-                            </ResponsiveContainer>
+                            <ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={2.5} dot={false} isAnimationActive={false} /></LineChart></ResponsiveContainer>
                         </div>
-
-                        <div className="text-right w-40 border-l border-slate-100 pl-8 shrink-0">
-                           <p className={`text-3xl font-black tabular-nums ${isExpanded ? 'text-indigo-600' : 'text-slate-800'}`}>{totalInView.toLocaleString()}</p>
-                        </div>
+                        <div className="text-right w-40 border-l border-slate-100 pl-8 shrink-0"><p className={`text-3xl font-black tabular-nums ${isExpanded ? 'text-indigo-600' : 'text-slate-800'}`}>{totalInView.toLocaleString()}</p></div>
                     </div>
-
                     {isExpanded && (
                         <div className="px-10 pb-10 animate-fade-in border-t border-slate-50 pt-10">
                             <div className="grid grid-cols-1 gap-12">
                                 <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm relative">
-                                    <div className="flex items-center gap-3 text-slate-500 mb-10">
-                                        <Icon name="activity" size={18} /> 
-                                        <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">營運進線量趨勢分析 (總量基準)</h4>
-                                    </div>
+                                    <div className="flex items-center gap-3 text-slate-500 mb-10"><Icon name="activity" size={18} /><h4 className="text-sm font-black uppercase tracking-widest text-slate-900">營運進線趨勢分析</h4></div>
                                     <div className="h-[400px] w-full">
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <LineChart data={trendData} margin={{ left: -20, right: 30 }}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 800, fill: '#94a3b8'}} />
-                                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 800, fill: '#94a3b8'}} />
-                                                <Tooltip 
-                                                    contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }} 
-                                                    cursor={{ stroke: '#e2e8f0', strokeWidth: 1.5 }}
-                                                />
-                                                <ReferenceLine y={avgValue} stroke="#e2e8f0" strokeDasharray="5 5" />
-                                                <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={4} dot={customizedDot} activeDot={{ r: 8, strokeWidth: 0, fill: '#4f46e5' }} />
-                                            </LineChart>
+                                            <LineChart data={trendData} margin={{ left: -20, right: 30 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 800, fill: '#94a3b8'}} /><YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 800, fill: '#94a3b8'}} /><Tooltip contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }} cursor={{ stroke: '#e2e8f0', strokeWidth: 1.5 }} /><ReferenceLine y={avgValue} stroke="#e2e8f0" strokeDasharray="5 5" /><Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={4} dot={customizedDot} activeDot={{ r: 8, strokeWidth: 0, fill: '#4f46e5' }} /></LineChart>
                                         </ResponsiveContainer>
                                     </div>
                                 </div>
-
                                 <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-x-auto">
                                     <table className="w-full text-left border-collapse">
-                                        <thead><tr className="text-slate-400 font-black text-[11px] uppercase border-b border-slate-50">
-                                            <th className="pl-8 py-6 min-w-[150px] bg-slate-50/50">問題類型明細</th>
-                                            {trendData.map(d => <th key={d.name} onClick={() => timeScale === 'daily' && onDateClick(d.fullDate)} className={`text-center py-6 bg-slate-50/50 ${timeScale === 'daily' ? 'clickable-date hover:text-indigo-600' : ''} ${currentSelectedDate === d.fullDate ? 'text-indigo-600 active-date-column font-black' : ''}`}>{d.name}</th>)}
-                                            <th className="text-right pr-8 py-6 bg-slate-50/50 font-black text-indigo-600">合計</th>
-                                        </tr></thead>
+                                        <thead><tr className="text-slate-400 font-black text-[11px] uppercase border-b border-slate-50"><th className="pl-8 py-6 min-w-[150px] bg-slate-50/50">問題類型</th>{trendData.map(d => <th key={d.name} className="text-center py-6 bg-slate-50/50">{d.name}</th>)}<th className="text-right pr-8 py-6 bg-slate-50/50 font-black text-indigo-600">合計</th></tr></thead>
                                         <tbody>
                                             {ISSUE_TYPES.map((cat, idx) => {
                                                 const rowTotal = trendData.reduce((sum, d) => sum + (d[cat] || 0), 0);
                                                 if (rowTotal === 0) return null;
-                                                return (
-                                                    <tr key={cat} className={`hover:bg-slate-50 transition-colors border-b border-slate-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/20'}`}>
-                                                        <td className="font-bold text-slate-600 pl-8 py-5 text-xs">{cat}</td>
-                                                        {trendData.map(d => <td key={d.name} className={`text-center text-xs font-bold text-slate-500 ${currentSelectedDate === d.fullDate ? 'active-date-column' : ''}`}>{(d[cat] || 0).toLocaleString()}</td>)}
-                                                        <td className="text-right pr-8 font-black text-indigo-500 text-xs">{(trendData.reduce((sum, d) => sum + (d[cat] || 0), 0)).toLocaleString()}</td>
-                                                    </tr>
-                                                );
+                                                return (<tr key={cat} className={`hover:bg-slate-50 transition-colors border-b border-slate-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/20'}`}><td className="font-bold text-slate-600 pl-8 py-5 text-xs">{cat}</td>{trendData.map(d => <td key={d.name} className="text-center text-xs font-bold text-slate-500">{(d[cat] || 0).toLocaleString()}</td>)}<td className="text-right pr-8 font-black text-indigo-500 text-xs">{rowTotal.toLocaleString()}</td></tr>);
                                             })}
                                         </tbody>
                                     </table>
@@ -329,7 +384,6 @@
             );
         };
 
-        // --- 主應用邏輯 ---
         function App() {
             const [activeTab, setActiveTab] = useState('general'); 
             const [timeScale, setTimeScale] = useState('daily');
@@ -348,16 +402,10 @@
                     if (dateStr === '2026-02-07') onlineIncidents.push({ id: "o1", severity: "critical", summary: "明星3缺1 iOS 支付端交握報錯", description: "iOS 金流憑證更換後部分連線發生 SSL 握手失敗，影響玩家儲值。", time: "14:30" });
                     if (dateStr === '2026-02-15') onlineIncidents.push({ id: "o2", severity: "warning", summary: "維護後機房路由震盪", description: "骨幹網路發生瞬時丟包，部分地區反應登入延遲。", time: "10:15" });
 
-                    db[dateStr] = {
-                        general: { stats: makeMockStats(500), majorIncidents: onlineIncidents, gameStats: {} },
-                        commercial: { stats: makeMockStats(300), majorIncidents: [], gameStats: {} }
-                    };
+                    db[dateStr] = { general: { stats: makeMockStats(500), majorIncidents: onlineIncidents, gameStats: {} }, commercial: { stats: makeMockStats(300), majorIncidents: [], gameStats: {} } };
                     [...ONLINE_ORDER, ...COMMERCIAL_ORDER].forEach(g => {
                         const data = { count: 0 };
-                        ISSUE_TYPES.forEach(c => { 
-                            const v = 15+Math.floor(Math.random()*50); 
-                            data[c] = v; data.count += v; 
-                        });
+                        ISSUE_TYPES.forEach(c => { const v = 15+Math.floor(Math.random()*50); data[c] = v; data.count += v; });
                         if (ONLINE_ORDER.includes(g)) db[dateStr].general.gameStats[g] = data;
                         else db[dateStr].commercial.gameStats[g] = data;
                     });
@@ -389,11 +437,12 @@
                 return dates.map(dateKey => ({ name: dateKey.slice(5), fullDate: dateKey, ...(database[dateKey]?.[activeTab]?.gameStats?.[projectName] || { count: 0 }) }));
             };
 
-            const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name, value }) => {
-                const radius = innerRadius + (outerRadius - innerRadius) * 1.6;
-                const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
-                const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
-                return <text x={x} y={y} fill="#64748b" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="10" fontWeight="900">{`${name} ${value}件 (${(percent * 100).toFixed(0)}%)`}</text>;
+            const handleDateChange = (offset) => {
+                const idx = datesList.indexOf(selectedDate);
+                const nextIdx = idx - offset; 
+                if (nextIdx >= 0 && nextIdx < datesList.length) {
+                    setSelectedDate(datesList[nextIdx]);
+                }
             };
 
             return (
@@ -407,11 +456,28 @@
                                     <p className="text-[9px] text-slate-400 font-black tracking-widest uppercase mt-1">決策級連動數據平台</p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-3 px-5 py-2.5 bg-slate-200/50 rounded-2xl border border-slate-300/50">
-                                <Icon name="calendar" size={15} className="text-slate-500" />
-                                <select value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="bg-transparent text-xs font-black text-slate-700 outline-none cursor-pointer">
-                                    {datesList.slice(0, 30).map(d => <option key={d} value={d}>{d}</option>)}
-                                </select>
+                            <div className="flex items-center gap-3">
+                                <button 
+                                    onClick={() => handleDateChange(1)}
+                                    className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                                    disabled={datesList.indexOf(selectedDate) >= datesList.length - 1}
+                                >
+                                    <Icon name="chevron-left" size={18} />
+                                </button>
+
+                                <DatePicker 
+                                    selectedDate={selectedDate} 
+                                    availableDates={datesList}
+                                    onSelect={(date) => setSelectedDate(date)} 
+                                />
+
+                                <button 
+                                    onClick={() => handleDateChange(-1)}
+                                    className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                                    disabled={datesList.indexOf(selectedDate) <= 0}
+                                >
+                                    <Icon name="chevron-right" size={18} />
+                                </button>
                             </div>
                         </div>
                     </header>
@@ -433,8 +499,7 @@
                                 </div>
 
                                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-10 mb-12 items-start">
-                                    <MajorEventsModule currentReport={currentReport} database={database} activeTab={activeTab} />
-
+                                    <MajorEventsModule currentReport={currentReport} database={database} activeTab={activeTab} selectedDate={selectedDate} />
                                     <div className="xl:col-span-2 bg-white p-10 rounded-[3.5rem] border border-slate-200 premium-shadow min-h-[600px] overflow-hidden">
                                         <h3 className="font-black text-slate-900 text-3xl tracking-tighter flex items-center gap-3 mb-12"><Icon name="layers" className="text-indigo-600" size={28}/> 遊戲問題排行與佔比 ({selectedDate})</h3>
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
@@ -444,20 +509,13 @@
                                                         <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                                                         <XAxis type="number" hide />
                                                         <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 11, fontWeight: 900, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                                                        <Bar dataKey="count" radius={[0, 10, 10, 0]} barSize={20} fill="#4f46e5" label={{ position: 'right', fill: '#1e293b', fontSize: 10, fontWeight: 900, offset: 12, formatter: (val) => `${val}件 (${chartData.find(d=>d.count===val)?.percent}%)` }}>
-                                                            {chartData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                                        </Bar>
+                                                        <Bar dataKey="count" radius={[0, 10, 10, 0]} barSize={20} fill="#4f46e5" label={{ position: 'right', fill: '#1e293b', fontSize: 10, fontWeight: 900, offset: 12, formatter: (val) => `${val}件 (${chartData.find(d=>d.count===val)?.percent}%)` }}>{chartData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Bar>
                                                     </BarChart>
                                                 </ResponsiveContainer>
                                             </div>
                                             <div className="h-[420px] flex flex-col items-center">
                                                 <ResponsiveContainer width="100%" height="100%">
-                                                    <PieChart>
-                                                        <Pie data={chartData.filter(d=>d.count>0).map(d=>({name:d.name, value:d.count}))} cx="50%" cy="45%" labelLine={true} label={renderPieLabel} outerRadius={95} innerRadius={60} paddingAngle={4} dataKey="value">
-                                                            {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="#fff" strokeWidth={3} />)}
-                                                        </Pie>
-                                                        <Tooltip />
-                                                    </PieChart>
+                                                    <PieChart><Pie data={chartData.filter(d=>d.count>0).map(d=>({name:d.name, value:d.count}))} cx="50%" cy="45%" labelLine={true} label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, name, value }) => { const radius = innerRadius + (outerRadius - innerRadius) * 1.6; const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180)); const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180)); return <text x={x} y={y} fill="#64748b" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="10" fontWeight="900">{`${name} ${value}件 (${(percent * 100).toFixed(0)}%)`}</text>; }} outerRadius={95} innerRadius={60} paddingAngle={4} dataKey="value">{chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="#fff" strokeWidth={3} />)}</Pie><Tooltip /></PieChart>
                                                 </ResponsiveContainer>
                                             </div>
                                         </div>
